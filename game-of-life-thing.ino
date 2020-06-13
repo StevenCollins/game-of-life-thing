@@ -17,9 +17,11 @@ ESP8266WebServer server(80);
 SSD1306Wire display(0x3c, SDA, SCL);
 
 // constants
-const bool DEBUG = false;
+const bool DEBUG = true;
 const int X_RESOLUTION = 128; // actual screen x resolution
 const int Y_RESOLUTION = 64; // actual screen y resolution
+const unsigned int BUFFER_TYPE_SIZE = 8; // size of the type of the buffer
+byte BUFFER[2][X_RESOLUTION/BUFFER_TYPE_SIZE][Y_RESOLUTION]; // two buffers, each with enough bits for each pixel. for mental reasons, x is the direction with the datatype bits.
 // almost constants
 int CELL_SIZE = 1; // desired size of cell in pixels
 int WIDTH = X_RESOLUTION / CELL_SIZE; // apparent screen x resolution
@@ -27,7 +29,6 @@ int HEIGHT = Y_RESOLUTION / CELL_SIZE; // apparent screen x resolution
 int TARGET_FRAMETIME = 16; // delay if a frame takes less time than this
 
 // global variables
-bool BUFFER[2][X_RESOLUTION][Y_RESOLUTION]; // very inefficient, takes 16kbytes RAM instead of 16kbits
 int frontBuffer = 0;
 
 void setup() {
@@ -49,9 +50,9 @@ void setup() {
   if (DEBUG) Serial.print("Connecting...");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(500);
     digitalWrite(LED_BUILTIN, LOW);
+    delay(500);
+    digitalWrite(LED_BUILTIN, HIGH);
   }
   MDNS.begin("esp8266");
   MDNS.addService("http", "tcp", 80);
@@ -83,20 +84,32 @@ void loop() {
     int yminusone = y == 0 ? HEIGHT - 1 : y - 1;
     int yplusone = y == HEIGHT - 1 ? 0 : y + 1;
     for (int x = 0; x < WIDTH; x++) {
-      int xminusone = x == 0 ? WIDTH - 1 : x - 1;
-      int xplusone = x == WIDTH - 1 ? 0 : x + 1;
-
       int liveNeighbours = 0;
-      liveNeighbours += BUFFER[frontBuffer][xminusone][yminusone] ? 1 : 0;
-      liveNeighbours += BUFFER[frontBuffer][x][yminusone] ? 1 : 0;
-      liveNeighbours += BUFFER[frontBuffer][xplusone][yminusone] ? 1 : 0;
-      liveNeighbours += BUFFER[frontBuffer][xminusone][y] ? 1 : 0;
-      liveNeighbours += BUFFER[frontBuffer][xplusone][y] ? 1 : 0;
-      liveNeighbours += BUFFER[frontBuffer][xminusone][yplusone] ? 1 : 0;
-      liveNeighbours += BUFFER[frontBuffer][x][yplusone] ? 1 : 0;
-      liveNeighbours += BUFFER[frontBuffer][xplusone][yplusone] ? 1 : 0;
+      
+      // get neighbours above and below
+      int xactual = x / 8;
+      int xoffset = x % 8;
+      liveNeighbours += bitRead(BUFFER[frontBuffer][xactual][yminusone], xoffset);
+      liveNeighbours += bitRead(BUFFER[frontBuffer][xactual][yplusone], xoffset);
 
-      BUFFER[backBuffer][x][y] = getNewState(BUFFER[frontBuffer][x][y], liveNeighbours);
+      // get leftside neighbours
+      int xminusone = x == 0 ? WIDTH - 1 : x - 1;
+      int xminusoneactual = xminusone / 8;
+      int xminusoneoffset = xminusone % 8;
+      liveNeighbours += bitRead(BUFFER[frontBuffer][xminusoneactual][yminusone], xminusoneoffset);
+      liveNeighbours += bitRead(BUFFER[frontBuffer][xminusoneactual][y], xminusoneoffset);
+      liveNeighbours += bitRead(BUFFER[frontBuffer][xminusoneactual][yplusone], xminusoneoffset);
+
+      // get rightside neighbours
+      int xplusone = x == WIDTH - 1 ? 0 : x + 1;
+      int xplusoneactual = xplusone / 8;
+      int xplusoneoffset = xplusone % 8;
+      liveNeighbours += bitRead(BUFFER[frontBuffer][xplusoneactual][yminusone], xplusoneoffset);
+      liveNeighbours += bitRead(BUFFER[frontBuffer][xplusoneactual][y], xplusoneoffset);
+      liveNeighbours += bitRead(BUFFER[frontBuffer][xplusoneactual][yplusone], xplusoneoffset);
+
+      int thisCell = bitRead(BUFFER[frontBuffer][xactual][y], xoffset);
+      bitWrite(BUFFER[backBuffer][xactual][y], xoffset, getNewState(thisCell, liveNeighbours));
     }
   }
 
@@ -104,9 +117,12 @@ void loop() {
   display.clear();
   display.setColor(WHITE);
   for (int y = 0; y < HEIGHT; y++) {
-    for (int x = 0; x < WIDTH; x++) {
-      if (BUFFER[frontBuffer][x][y]) {
-        display.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+    for (int x = 0; x < WIDTH / BUFFER_TYPE_SIZE; x++) {
+      byte cellGroup = BUFFER[frontBuffer][x][y];
+      for (int i = 0; i < BUFFER_TYPE_SIZE; i++) {
+        if (bitRead(cellGroup, i) == 1) {
+          display.fillRect((x * 8 + i) * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
       }
     }
   }
@@ -182,19 +198,20 @@ void mirrorBuffers() {
 
 // init with a simple glider
 void initSimpleGlider() {
-  BUFFER[0][2][1] = true;
-  BUFFER[0][3][2] = true;
-  BUFFER[0][1][3] = true;
-  BUFFER[0][2][3] = true;
-  BUFFER[0][3][3] = true;
+  bitWrite(BUFFER[0][0][1], 2, 1);
+  bitWrite(BUFFER[0][0][2], 3, 1);
+  bitWrite(BUFFER[0][0][3], 1, 1);
+  bitWrite(BUFFER[0][0][3], 2, 1);
+  bitWrite(BUFFER[0][0][3], 3, 1);
   mirrorBuffers();
 }
 // init with random
 void initRandom() {
   for (int y = 0; y < HEIGHT; y++) {
-    for (int x = 0; x < WIDTH; x++) {
-      bool cell = random(2) == 1;
-      BUFFER[0][x][y] = cell;
+    for (int x = 0; x < WIDTH / BUFFER_TYPE_SIZE; x++) {
+      for (int i = 0; i < BUFFER_TYPE_SIZE; i++) {
+        bitWrite(BUFFER[0][x][y], i, random(2));
+      }
     }
   }
   mirrorBuffers();
