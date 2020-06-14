@@ -20,8 +20,8 @@ SSD1306Wire display(0x3c, SDA, SCL);
 const bool DEBUG = true;
 const int X_RESOLUTION = 128; // actual screen x resolution
 const int Y_RESOLUTION = 64; // actual screen y resolution
-const unsigned int BUFFER_TYPE_SIZE = 8; // size of the type of the buffer
-byte BUFFER[2][X_RESOLUTION/BUFFER_TYPE_SIZE][Y_RESOLUTION]; // two buffers, each with enough bits for each pixel. for mental reasons, x is the direction with the datatype bits.
+const unsigned int BUFFER_TYPE_SIZE = 32; // size of the type of the buffer
+unsigned long BUFFER[2][X_RESOLUTION/BUFFER_TYPE_SIZE][Y_RESOLUTION]; // two buffers, each with enough bits for each pixel. for mental reasons, x is the direction with the datatype bits.
 // almost constants
 int CELL_SIZE = 1; // desired size of cell in pixels
 int WIDTH = X_RESOLUTION / CELL_SIZE; // apparent screen x resolution
@@ -59,6 +59,7 @@ void setup() {
 
   // setup server components
   server.on("/", handleRoot);
+  server.on("/clear", handleClear);
   server.on("/random", handleRandom);
   server.on("/glider", handleGlider);
   server.begin();
@@ -87,23 +88,23 @@ void loop() {
       int liveNeighbours = 0;
       
       // get neighbours above and below
-      int xactual = x / 8;
-      int xoffset = x % 8;
+      int xactual = x / BUFFER_TYPE_SIZE;
+      int xoffset = x % BUFFER_TYPE_SIZE;
       liveNeighbours += bitRead(BUFFER[frontBuffer][xactual][yminusone], xoffset);
       liveNeighbours += bitRead(BUFFER[frontBuffer][xactual][yplusone], xoffset);
 
       // get leftside neighbours
       int xminusone = x == 0 ? WIDTH - 1 : x - 1;
-      int xminusoneactual = xminusone / 8;
-      int xminusoneoffset = xminusone % 8;
+      int xminusoneactual = xminusone / BUFFER_TYPE_SIZE;
+      int xminusoneoffset = xminusone % BUFFER_TYPE_SIZE;
       liveNeighbours += bitRead(BUFFER[frontBuffer][xminusoneactual][yminusone], xminusoneoffset);
       liveNeighbours += bitRead(BUFFER[frontBuffer][xminusoneactual][y], xminusoneoffset);
       liveNeighbours += bitRead(BUFFER[frontBuffer][xminusoneactual][yplusone], xminusoneoffset);
 
       // get rightside neighbours
       int xplusone = x == WIDTH - 1 ? 0 : x + 1;
-      int xplusoneactual = xplusone / 8;
-      int xplusoneoffset = xplusone % 8;
+      int xplusoneactual = xplusone / BUFFER_TYPE_SIZE;
+      int xplusoneoffset = xplusone % BUFFER_TYPE_SIZE;
       liveNeighbours += bitRead(BUFFER[frontBuffer][xplusoneactual][yminusone], xplusoneoffset);
       liveNeighbours += bitRead(BUFFER[frontBuffer][xplusoneactual][y], xplusoneoffset);
       liveNeighbours += bitRead(BUFFER[frontBuffer][xplusoneactual][yplusone], xplusoneoffset);
@@ -118,10 +119,10 @@ void loop() {
   display.setColor(WHITE);
   for (int y = 0; y < HEIGHT; y++) {
     for (int x = 0; x < WIDTH / BUFFER_TYPE_SIZE; x++) {
-      byte cellGroup = BUFFER[frontBuffer][x][y];
+      unsigned long cellGroup = BUFFER[frontBuffer][x][y];
       for (int i = 0; i < BUFFER_TYPE_SIZE; i++) {
         if (bitRead(cellGroup, i) == 1) {
-          display.fillRect((x * 8 + i) * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+          display.fillRect((x * BUFFER_TYPE_SIZE + i) * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
         }
       }
     }
@@ -150,18 +151,16 @@ bool getNewState(bool currentState, int liveNeighbours) {
 // root returns a test string
 void handleRoot() {
   handleArgs();
-  digitalWrite(LED_BUILTIN, HIGH);
-  //  char state[8257];
-  //  for (int j = 0; j < 64; j++) {
-  //    for (int i = 0; i < 128; i++) {
-  //      state[i+j*129]=BUFFER[0][i][j]?1:0;
-  //    }
-  //    state[129+j*129]='\t';
-  //  }
-  //  state[8256]='\0';
-  //  server.send(200, "application/octet-stream", buffersx[0][0][0]);
-  server.send(200, "text/plain", "Hello, world!");
   digitalWrite(LED_BUILTIN, LOW);
+  server.send(200, "text/plain", "Hello, world!");
+  digitalWrite(LED_BUILTIN, HIGH);
+}
+
+// clear clears the game state
+void handleClear() {
+  handleArgs();
+  initClear();
+  server.send(200, "text/plain", "Cleared!");
 }
 
 // random randomizes the game state
@@ -196,6 +195,11 @@ void mirrorBuffers() {
   memcpy(BUFFER[1], BUFFER[0], sizeof(BUFFER[0]));
 }
 
+// clear
+void initClear() {
+  memset(BUFFER[0],0,sizeof(BUFFER[0]));
+  mirrorBuffers();
+}
 // init with a simple glider
 void initSimpleGlider() {
   bitWrite(BUFFER[0][0][1], 2, 1);
