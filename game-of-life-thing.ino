@@ -2,6 +2,7 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
+#include <FS.h>
 #include "SSD1306Wire.h"
 #include "WiFiSettings.h"
 
@@ -55,9 +56,11 @@ void setup() {
   }
   MDNS.begin("esp8266");
   MDNS.addService("http", "tcp", 80);
+  SPIFFS.begin();
 
   // setup server components
   server.on("/", handleRoot);
+  server.onNotFound(handleRoot);
   server.on("/clear", handleClear);
   server.on("/random", handleRandom);
   server.on("/glider", handleGlider);
@@ -134,33 +137,40 @@ bool getNewState(bool currentState, int liveNeighbours) {
   return futureState;
 }
 
+void sendIndex() {
+  if (SPIFFS.exists("/index.html")) {
+    File file = SPIFFS.open("/index.html", "r");
+    size_t sent = server.streamFile(file, "text/html");
+    file.close();
+  } else {
+    server.send(500, "text/plain", "Something messed up :(");
+  }
+}
+
 // root returns a test string
 void handleRoot() {
-  handleArgs();
   digitalWrite(LED_BUILTIN, LOW);
-  server.send(200, "text/plain", "Hello, world!");
+  handleArgs();
+  sendIndex();
   digitalWrite(LED_BUILTIN, HIGH);
 }
 
 // clear clears the game state
 void handleClear() {
-  handleArgs();
   initClear();
-  server.send(200, "text/plain", "Cleared!");
+  handleRoot();
 }
 
 // random randomizes the game state
 void handleRandom() {
-  handleArgs();
   initRandom();
-  server.send(200, "text/plain", "Randomized!");
+  handleRoot();
 }
 
 // glider launches a simple glider
 void handleGlider() {
-  handleArgs();
   initSimpleGlider();
-  server.send(200, "text/plain", "Glider!");
+  handleRoot();
 }
 
 // allow config from query parameters
