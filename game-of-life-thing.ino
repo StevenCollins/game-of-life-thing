@@ -28,7 +28,7 @@ unsigned long BUFFER[2][X_RESOLUTION/BUFFER_TYPE_SIZE][Y_RESOLUTION]; // two buf
 byte CELL_SIZE = 1; // desired size of cell in pixels
 byte WIDTH = X_RESOLUTION / CELL_SIZE; // apparent screen x resolution
 byte HEIGHT = Y_RESOLUTION / CELL_SIZE; // apparent screen x resolution
-byte TARGET_FRAMETIME = 16000; // delay if a frame takes less time than this
+unsigned long TARGET_FRAMETIME = 16000; // delay if a frame takes less time than this
 
 // global variables
 byte frontBuffer = 0;
@@ -85,51 +85,50 @@ void loop() {
   // update the back buffer
   unsigned long bufferStartTime = micros();
   for (int y = 0; y < HEIGHT; y++) {
-    int yminusone = y == 0 ? HEIGHT - 1 : y - 1;
-    int yplusone = y == HEIGHT - 1 ? 0 : y + 1;
+    int yMinusOne = y == 0 ? HEIGHT - 1 : y - 1;
+    int yPlusOne = y == HEIGHT - 1 ? 0 : y + 1;
     for (int x = 0; x < WIDTH; x++) {
-      int liveNeighbours = 0;
-      
-      int xactual = x >> BUFFER_TYPE_POWR;
-      int xoffset = x & BUFFER_TYPE_MASK;
-      int xminusone = x == 0 ? WIDTH - 1 : x - 1;
-      int xminusoneactual = xminusone >> BUFFER_TYPE_POWR;
-      int xminusoneoffset = xminusone & BUFFER_TYPE_MASK;
-      int xplusone = x == WIDTH - 1 ? 0 : x + 1;
-      int xplusoneactual = xplusone >> BUFFER_TYPE_POWR;
-      int xplusoneoffset = xplusone & BUFFER_TYPE_MASK;
+      int xIndex = x >> BUFFER_TYPE_POWR;
+      int xOffset = x & BUFFER_TYPE_MASK;
+      int xMinusOne = x == 0 ? WIDTH - 1 : x - 1;
+      int xMinusOneIndex = xMinusOne >> BUFFER_TYPE_POWR;
+      int xMinusOneOffset = xMinusOne & BUFFER_TYPE_MASK;
+      int xPlusOne = x == WIDTH - 1 ? 0 : x + 1;
+      int xPlusOneIndex = xPlusOne >> BUFFER_TYPE_POWR;
+      int xPlusOneOffset = xPlusOne & BUFFER_TYPE_MASK;
 
-      // get bytes from the buffer - elses below fallback if the byte doesn't contain the correct data
-      unsigned long topRow = BUFFER[frontBuffer][xactual][yminusone];
-      unsigned long midRow = BUFFER[frontBuffer][xactual][y];
-      unsigned long botRow = BUFFER[frontBuffer][xactual][yplusone];
+      // get chunk of data from the buffer - "else"s below fallback if the chunk doesn't contain the correct data
+      unsigned long topRow = BUFFER[frontBuffer][xIndex][yMinusOne];
+      unsigned long midRow = BUFFER[frontBuffer][xIndex][y];
+      unsigned long botRow = BUFFER[frontBuffer][xIndex][yPlusOne];
 
       // get neighbours above and below
-      liveNeighbours += bitRead(topRow, xoffset); // neighbour above
-      liveNeighbours += bitRead(botRow, xoffset); // neighbour below
+      int liveNeighbours = 0;
+      liveNeighbours += bitRead(topRow, xOffset); // neighbour above
+      liveNeighbours += bitRead(botRow, xOffset); // neighbour below
       // left side neighbours
-      if (xminusoneactual == xactual) {
-        liveNeighbours += bitRead(topRow, xminusoneoffset);
-        liveNeighbours += bitRead(midRow, xminusoneoffset);
-        liveNeighbours += bitRead(botRow, xminusoneoffset);
+      if (xMinusOneIndex == xIndex) {
+        liveNeighbours += bitRead(topRow, xMinusOneOffset);
+        liveNeighbours += bitRead(midRow, xMinusOneOffset);
+        liveNeighbours += bitRead(botRow, xMinusOneOffset);
       } else {
-        liveNeighbours += bitRead(BUFFER[frontBuffer][xminusoneactual][yminusone], xminusoneoffset);
-        liveNeighbours += bitRead(BUFFER[frontBuffer][xminusoneactual][y], xminusoneoffset);
-        liveNeighbours += bitRead(BUFFER[frontBuffer][xminusoneactual][yplusone], xminusoneoffset);
+        liveNeighbours += bitRead(BUFFER[frontBuffer][xMinusOneIndex][yMinusOne], xMinusOneOffset);
+        liveNeighbours += bitRead(BUFFER[frontBuffer][xMinusOneIndex][y], xMinusOneOffset);
+        liveNeighbours += bitRead(BUFFER[frontBuffer][xMinusOneIndex][yPlusOne], xMinusOneOffset);
       }
       // right side neighbours
-      if (xplusoneactual == xactual) {
-        liveNeighbours += bitRead(topRow, xplusoneoffset);
-        liveNeighbours += bitRead(midRow, xplusoneoffset);
-        liveNeighbours += bitRead(botRow, xplusoneoffset);
+      if (xPlusOneIndex == xIndex) {
+        liveNeighbours += bitRead(topRow, xPlusOneOffset);
+        liveNeighbours += bitRead(midRow, xPlusOneOffset);
+        liveNeighbours += bitRead(botRow, xPlusOneOffset);
       } else {
-        liveNeighbours += bitRead(BUFFER[frontBuffer][xplusoneactual][yminusone], xplusoneoffset);
-        liveNeighbours += bitRead(BUFFER[frontBuffer][xplusoneactual][y], xplusoneoffset);
-        liveNeighbours += bitRead(BUFFER[frontBuffer][xplusoneactual][yplusone], xplusoneoffset);
+        liveNeighbours += bitRead(BUFFER[frontBuffer][xPlusOneIndex][yMinusOne], xPlusOneOffset);
+        liveNeighbours += bitRead(BUFFER[frontBuffer][xPlusOneIndex][y], xPlusOneOffset);
+        liveNeighbours += bitRead(BUFFER[frontBuffer][xPlusOneIndex][yPlusOne], xPlusOneOffset);
       }
 
-      bool thisCell = bitRead(midRow, xoffset); // the current cell
-      bitWrite(BUFFER[backBuffer][xactual][y], xoffset, getNewState(thisCell, liveNeighbours));
+      bool thisCell = bitRead(midRow, xOffset); // the current cell
+      bitWrite(BUFFER[backBuffer][xIndex][y], xOffset, getNewState(thisCell, liveNeighbours));
     }
   }
   unsigned long bufferEndTime = micros();
