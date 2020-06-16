@@ -64,6 +64,7 @@ void setup() {
   server.on("/clear", handleClear);
   server.on("/random", handleRandom);
   server.on("/glider", handleGlider);
+  server.on("/getGrid", handleGetGrid);
   server.begin();
 
   if (DEBUG) Serial.println("Ready!");
@@ -173,15 +174,37 @@ void handleGlider() {
   handleRoot();
 }
 
+// getGrid returns grid data in JSON format
+void handleGetGrid() {
+  // response will be chunked - not enough memory to send it all at once
+  server.chunkedResponseModeStart(200, "application/json");
+  const int rowsPerChunk = 8;
+  const int chunkSize = 258 * rowsPerChunk + 2; // each row is 128 '1'/'0', 128 ',', 2 '[]', and maybe 2 more of ',[]'
+  char chunkData[chunkSize] = "["; // initialize the very first chunk with the outer [
+  for (int chunk = 0; chunk < HEIGHT / rowsPerChunk; chunk++) {
+    for (int row = 0; row < rowsPerChunk; row++) {
+      int y = chunk * rowsPerChunk + row;
+      strcat(chunkData, BUFFER[0][0][y] ? "[1" : "[0");
+      for (int x = 1; x < WIDTH; x++) {
+        strcat(chunkData, BUFFER[0][x][y] ? ",1" : ",0");
+      }
+      strcat(chunkData, y != HEIGHT - 1 ? "]," : "]]");
+    }
+    server.sendContent(chunkData);
+    chunkData[0] = '\0'; // "erase" the string
+  }
+  server.chunkedResponseFinalize();
+}
+
 // allow config from query parameters
 void handleArgs() {
   for (int i = 0; i < server.args(); i++) {
     if (server.argName(i) == "size" && server.arg(i).toInt() != 0) {
-      CELL_SIZE=server.arg(i).toInt();
+      CELL_SIZE = server.arg(i).toInt();
       WIDTH = X_RESOLUTION / CELL_SIZE;
       HEIGHT = Y_RESOLUTION / CELL_SIZE;
     } else if (server.argName(i) == "frametime" && server.arg(i).toInt() != 0) {
-      TARGET_FRAMETIME=server.arg(i).toInt() * 1000;
+      TARGET_FRAMETIME = server.arg(i).toInt() * 1000;
     }
   }
 }
@@ -193,7 +216,7 @@ void mirrorBuffers() {
 
 // clear
 void initClear() {
-  memset(BUFFER[0],0,sizeof(BUFFER[0]));
+  memset(BUFFER[0], 0, sizeof(BUFFER[0]));
   mirrorBuffers();
 }
 // init with a simple glider
