@@ -61,6 +61,7 @@ void setup() {
   // setup server components
   server.on("/", handleRoot);
   server.onNotFound(handleRoot);
+  server.on("/index.js", handleRootJs);
   server.on("/clear", handleClear);
   server.on("/random", handleRandom);
   server.on("/glider", handleGlider);
@@ -138,22 +139,28 @@ bool getNewState(bool currentState, int liveNeighbours) {
   return futureState;
 }
 
-void sendIndex() {
-  if (SPIFFS.exists("/index.html")) {
-    File file = SPIFFS.open("/index.html", "r");
-    size_t sent = server.streamFile(file, "text/html");
+// send the specified file as the specified type
+void sendFile(char* name, char* type) {
+  if (SPIFFS.exists(name)) {
+    File file = SPIFFS.open(name, "r");
+    size_t sent = server.streamFile(file, type);
     file.close();
   } else {
     server.send(500, "text/plain", "Something messed up :(");
   }
 }
 
-// root returns a test string
+// root returns index.html
 void handleRoot() {
   digitalWrite(LED_BUILTIN, LOW);
   handleArgs();
-  sendIndex();
+  sendFile("/index.html", "text/html");
   digitalWrite(LED_BUILTIN, HIGH);
+}
+
+// rootJs returns index.js
+void handleRootJs() {
+  sendFile("/index.js", "application/javascript");
 }
 
 // clear clears the game state
