@@ -183,6 +183,7 @@ void handleGlider() {
 
 // getGrid returns grid data in JSON format
 void handleGetGrid() {
+  handleArgs();
   // response will be chunked - not enough memory to send it all at once
   server.chunkedResponseModeStart(200, "application/json");
   const int rowsPerChunk = 8;
